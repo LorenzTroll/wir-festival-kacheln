@@ -1,0 +1,15 @@
+{
+  "name": "wir-festival-kacheln",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Test A — Render-Pipeline: ICS-Feed von wir-halle.de -> PNG-Kacheln (1080x1080)",
+  "scripts": {
+    "generate": "node scripts/generate.js"
+  },
+  "dependencies": {
+    "date-fns": "^3.6.0",
+    "node-ical": "^0.20.1",
+    "puppeteer": "^23.0.0"
+  }
+}

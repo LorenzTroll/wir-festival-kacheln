@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<style>
+  /* PLATZHALTER-CD — echte Hex-Codes/Fonts vom Verein ersetzen diese Werte.
+     Fonts spaeter via @font-face aus template/fonts/ einbinden (offline-faehig). */
+  :root {
+    --bg: #1a1a2e;
+    --accent: #e94560;
+    --ink: #ffffff;
+    --muted: #b8b8d0;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1080px; height: 1080px; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    padding: 90px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+  body::before {
+    content: "";
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 22px; background: var(--accent);
+  }
+  .brand {
+    font-size: 34px; font-weight: 800; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--accent);
+  }
+  .kw { font-size: 28px; color: var(--muted); margin-top: 6px; letter-spacing: 1px; }
+
+  .body { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+
+  .when {
+    font-size: 40px; font-weight: 700; color: var(--accent);
+    margin-bottom: 18px; text-transform: capitalize;
+  }
+  .title {
+    font-size: 74px; font-weight: 800; line-height: 1.04;
+    letter-spacing: -1px;
+  }
+  .meta {
+    margin-top: 30px; font-size: 38px; color: var(--muted);
+    display: flex; align-items: baseline; gap: 16px;
+  }
+  .meta .pin { color: var(--accent); }
+  .desc {
+    margin-top: 34px; font-size: 32px; line-height: 1.45; color: var(--muted);
+    max-height: 200px; overflow: hidden;
+  }
+  .foot { font-size: 26px; color: var(--muted); letter-spacing: 1px; }
+
+  /* Cover-Variante */
+  body.cover .title { font-size: 120px; line-height: 1.02; }
+  body.cover .when, body.cover .desc { display: none; }
+  body.cover .meta { font-size: 52px; color: var(--ink); }
+</style>
+</head>
+<body class="{{kind}}">
+  <header>
+    <div class="brand">WIR · Halle</div>
+    <div class="kw">Kalenderwoche {{kw}}</div>
+  </header>
+
+  <main class="body">
+    <div class="when">{{weekday}} · {{date}}</div>
+    <h1 class="title">{{title}}</h1>
+    <div class="meta">
+      <span>{{time}}</span>
+      <span class="pin">📍 {{location}}</span>
+    </div>
+    <p class="desc">{{description}}</p>
+  </main>
+
+  <footer class="foot">wir-halle.de/veranstaltungen</footer>
+</body>
+</html>

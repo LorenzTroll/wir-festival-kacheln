@@ -1,0 +1,42 @@
+name: Weekly Tiles (Test A)
+
+# Trigger:
+#  - workflow_dispatch: manueller Knopf "Run workflow" im Actions-Tab
+#  - schedule: Cron, Sonntag 16:00 UTC (= 18:00 MESZ). Fuer den reinen Test
+#    auskommentiert, damit nicht ungewollt jede Woche laeuft. Spaeter aktivieren.
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: '0 16 * * 0'
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    env:
+      # Test-Konfiguration (keine Geheimnisse) — rendert die echte WIR-Woche aus 2025.
+      # Fuer Produktion spaeter: ICS_URL bzw. SOURCE=em-rest + Secrets, REF_DATE leeren, WEEK_OFFSET=1.
+      ICS_URL: 'https://wir-halle.de/events/?ical=1'
+      REF_DATE: '2025-09-08'
+      WEEK_OFFSET: '0'
+    steps:
+      - name: Repo auschecken
+        uses: actions/checkout@v4
+
+      - name: Node einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Dependencies installieren (zieht Puppeteer + Chromium)
+        run: npm ci
+
+      - name: Kacheln rendern
+        run: npm run generate
+
+      - name: PNGs als Artefakt hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: kacheln
+          path: output/*.png
+          if-no-files-found: error
