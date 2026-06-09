@@ -168,11 +168,69 @@ async function writeIndex(rendered, coverName, kw, weekStart, weekEnd) {
     <h1>Diese Woche bei WIR — KW ${kw}</h1>
     <div class="sub">${range} · ${rendered.length} Veranstaltung${rendered.length === 1 ? '' : 'en'} · automatisch generiert</div>
     <a class="csv" href="events-KW${kw}.csv" download>📄 CSV für Figma herunterladen</a>
+    <a class="csv" style="background:#333" href="uebersicht.html">🌐 Website-Übersicht (Vorschau)</a>
   </header>
   ${coverName ? `<div class="cover"><img src="${coverName}" alt="Cover"></div>` : ''}
   <div class="grid">${cards}</div>
 </body></html>\n`;
   await fs.writeFile(path.join(OUT, 'index.html'), html, 'utf8');
+}
+
+// --- Website-Wochenuebersicht (Vorschau = exaktes HTML, das der WP-Shortcode spaeter ausgibt) ---
+// Pflicht aus dem Briefing: Liste statt Kacheln, im CD, "ansprechend + uebersichtlich".
+// Im WP-Plugin ersetzt eine EM-Schleife (scope=this-week, nur veroeffentlichte Events) die statischen <article>.
+async function writeOverview(rendered, kw, weekStart, weekEnd) {
+  const range = `${format(weekStart, 'dd.MM.')}–${format(weekEnd, 'dd.MM.yyyy')}`;
+  const rows = rendered.map(({ ev }) => `
+    <article class="event">
+      <time class="date" datetime="${format(ev.start, 'yyyy-MM-dd')}">
+        <span class="wd">${htmlEscape(format(ev.start, 'EE', { locale: de }))}</span>
+        <span class="d">${htmlEscape(format(ev.start, 'dd.MM.', { locale: de }))}</span>
+      </time>
+      <div class="info">
+        <h2>${htmlEscape(ev.title)}</h2>
+        <p class="meta">${htmlEscape(timeLabel(ev))}${ev.location ? ' · 📍 ' + htmlEscape(ev.location) : ''}</p>
+        <p class="desc">${htmlEscape(truncate(ev.description, 180))}</p>
+        ${ev.url ? `<a class="more" href="${ev.url}">Mehr erfahren →</a>` : ''}
+      </div>
+    </article>`).join('');
+
+  const html = `<!doctype html>
+<html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>WIR · Halle — Wochenübersicht KW ${kw}</title>
+<style>
+  /* PLATZHALTER-CD — echte Farben/Fonts ersetzen diese Werte. */
+  :root{--accent:#e94560;--ink:#1a1a2e;--muted:#5b5b70;--line:#ececf2;--bg:#ffffff}
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#f5f5f8;color:var(--ink);margin:0;padding:40px}
+  .wrap{max-width:760px;margin:0 auto;background:var(--bg);border-radius:16px;overflow:hidden;box-shadow:0 4px 30px rgba(0,0,0,.06)}
+  header{padding:32px 36px;border-bottom:4px solid var(--accent)}
+  header h1{margin:0;font-size:26px}
+  header .sub{color:var(--muted);margin-top:6px;font-size:15px}
+  .event{display:flex;gap:24px;padding:24px 36px;border-bottom:1px solid var(--line)}
+  .event:last-child{border-bottom:0}
+  .date{flex:0 0 64px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:4px}
+  .date .wd{font-size:14px;color:var(--accent);font-weight:700;text-transform:uppercase}
+  .date .d{font-size:20px;font-weight:800}
+  .info h2{margin:0 0 6px;font-size:20px;line-height:1.2}
+  .info .meta{margin:0 0 8px;color:var(--accent);font-weight:600;font-size:15px}
+  .info .desc{margin:0 0 8px;color:var(--muted);font-size:15px;line-height:1.5}
+  .info .more{color:var(--accent);text-decoration:none;font-weight:600;font-size:15px}
+  footer{padding:20px 36px;color:var(--muted);font-size:13px}
+</style></head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Diese Woche bei WIR</h1>
+      <div class="sub">KW ${kw} · ${range} · ${rendered.length} Veranstaltung${rendered.length === 1 ? '' : 'en'}</div>
+    </header>
+    ${rows || '<div class="event"><div class="info"><p class="desc">Diese Woche sind keine Veranstaltungen eingetragen.</p></div></div>'}
+    <footer>Automatisch erzeugt aus dem Veranstaltungskalender · wir-halle.de</footer>
+  </div>
+</body></html>\n`;
+  await fs.writeFile(path.join(OUT, 'uebersicht.html'), html, 'utf8');
 }
 
 async function main() {
@@ -249,7 +307,8 @@ async function main() {
   // Begleit-Dateien fuer den festen Link
   await writeCsv(rendered, kw);
   await writeIndex(rendered, coverName, kw, weekStart, weekEnd);
-  console.log(`\nFertig. ${week.length + 1} Kacheln + CSV + index.html in output/`);
+  await writeOverview(rendered, kw, weekStart, weekEnd);
+  console.log(`\nFertig. ${week.length + 1} Kacheln + CSV + index.html + uebersicht.html in output/`);
 }
 
 main().catch((err) => { console.error('FEHLER:', err); process.exit(1); });
