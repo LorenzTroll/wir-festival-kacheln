@@ -9,17 +9,32 @@ on:
   # schedule:
   #   - cron: '0 16 * * 0'
 
+# Rechte fuer GitHub Pages — nutzt nur den eingebauten GITHUB_TOKEN, kein externes Secret.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
 jobs:
-  render:
+  render-and-deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
     env:
       # WICHTIG: Runner laeuft sonst auf UTC -> Uhrzeiten + Wochengrenzen waeren verschoben.
       TZ: 'Europe/Berlin'
       # Test-Konfiguration (keine Geheimnisse) — rendert die echte WIR-Woche aus 2025.
-      # Fuer Produktion spaeter: ICS_URL bzw. SOURCE=em-rest + Secrets, REF_DATE leeren, WEEK_OFFSET=1.
+      # Fuer Produktion spaeter: SOURCE=em-rest + Secrets, REF_DATE leeren, WEEK_OFFSET=1.
       ICS_URL: 'https://wir-halle.de/events/?ical=1'
       REF_DATE: '2025-09-08'
       WEEK_OFFSET: '0'
+      # Basis-URL fuer die image_url-Spalte in der CSV (Figma)
+      PAGES_BASE_URL: 'https://lorenztroll.github.io/wir-festival-kacheln'
     steps:
       - name: Repo auschecken
         uses: actions/checkout@v4
@@ -33,12 +48,19 @@ jobs:
       - name: Dependencies installieren (zieht Puppeteer + Chromium)
         run: npm ci
 
-      - name: Kacheln rendern
+      - name: Kacheln + CSV + Galerie rendern
         run: npm run generate
 
-      - name: PNGs als Artefakt hochladen
-        uses: actions/upload-artifact@v4
+      - name: Pages konfigurieren
+        uses: actions/configure-pages@v5
         with:
-          name: kacheln
-          path: output/*.png
-          if-no-files-found: error
+          enablement: true
+
+      - name: output/ als Pages-Artefakt hochladen
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: output
+
+      - name: Auf GitHub Pages deployen
+        id: deploy
+        uses: actions/deploy-pages@v4

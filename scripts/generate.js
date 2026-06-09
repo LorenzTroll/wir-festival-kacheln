@@ -1,5 +1,6 @@
 // Test A — Render-Pipeline
-// Datenquelle (ICS-Feed ODER EM-REST-API) -> Wochen-Events filtern -> PNG-Kacheln (1080x1080).
+// Datenquelle (ICS-Feed ODER EM-REST-API) -> Wochen-Events filtern -> PNG-Kacheln (1080x1080)
+//   + events-KWxx.csv (fuer Figma) + index.html (Galerie). Alles nach output/, das GitHub Pages publiziert.
 //
 // Quelle umschaltbar via SOURCE=ics (Standard) oder SOURCE=em-rest.
 // ICS funktioniert anonym, ist aber auf 50 Events ab dem aeltesten limitiert
@@ -54,6 +55,16 @@ function truncate(str, n) {
   return s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s;
 }
 
+// CSV-Feld korrekt quoten
+function csvCell(v = '') {
+  const s = String(v).replace(/"/g, '""');
+  return `"${s}"`;
+}
+
+function htmlEscape(s = '') {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 // --- Quelle 1: ICS-Feed ---
 async function fetchFromICS(url) {
   const data = await ical.async.fromURL(url);
@@ -95,8 +106,73 @@ async function fetchFromEMRest() {
   }));
 }
 
-async function renderTile(page, html) {
-  await page.setContent(html, { waitUntil: 'networkidle0' });
+function timeLabel(ev) {
+  const start = format(ev.start, 'HH:mm');
+  const end = ev.end && !isNaN(ev.end) ? '–' + format(ev.end, 'HH:mm') : '';
+  return `${start}${end} Uhr`;
+}
+
+// --- CSV fuer Figma (Daten-Sync-Plugins) ---
+async function writeCsv(rendered, kw) {
+  const base = (process.env.PAGES_BASE_URL || '').replace(/\/$/, '');
+  const header = ['kw', 'weekday', 'date', 'time', 'title', 'location', 'description', 'url', 'image', 'image_url'];
+  const rows = rendered.map(({ ev, name }) => [
+    kw,
+    format(ev.start, 'EEEE', { locale: de }),
+    format(ev.start, 'dd.MM.yyyy'),
+    timeLabel(ev),
+    ev.title,
+    ev.location,
+    ev.description,
+    ev.url,
+    name,
+    base ? `${base}/${name}` : name,
+  ].map(csvCell).join(','));
+  const csv = [header.join(','), ...rows].join('\n') + '\n';
+  await fs.writeFile(path.join(OUT, `events-KW${kw}.csv`), csv, 'utf8');
+}
+
+// --- Galerie-Seite (fester Link fuer die Redaktion) ---
+async function writeIndex(rendered, coverName, kw, weekStart, weekEnd) {
+  const range = `${format(weekStart, 'dd.MM.')}–${format(weekEnd, 'dd.MM.yyyy')}`;
+  const cards = rendered.map(({ ev, name }) => `
+    <figure class="card">
+      <a href="${name}" download><img src="${name}" alt="${htmlEscape(ev.title)}" loading="lazy"></a>
+      <figcaption>
+        <strong>${htmlEscape(ev.title)}</strong>
+        <span>${htmlEscape(format(ev.start, 'EEEE dd.MM.', { locale: de }))} · ${htmlEscape(timeLabel(ev))}</span>
+        <a class="dl" href="${name}" download>PNG herunterladen</a>
+      </figcaption>
+    </figure>`).join('');
+
+  const html = `<!doctype html>
+<html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>WIR · Halle — Kacheln KW ${kw}</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#12121f;color:#fff;margin:0;padding:40px}
+  header{max-width:1100px;margin:0 auto 28px}
+  h1{margin:0;font-size:30px}.sub{color:#b8b8d0;margin-top:6px}
+  .csv{display:inline-block;margin-top:16px;background:#e94560;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600}
+  .grid{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:22px}
+  .card{margin:0;background:#1a1a2e;border-radius:12px;overflow:hidden}
+  .card img{width:100%;display:block}
+  figcaption{padding:14px;display:flex;flex-direction:column;gap:6px;font-size:14px}
+  figcaption span{color:#b8b8d0}
+  .dl{color:#e94560;text-decoration:none;font-weight:600;margin-top:4px}
+  .cover{max-width:1100px;margin:0 auto 22px}.cover img{width:100%;max-width:420px;border-radius:12px;display:block}
+</style></head>
+<body>
+  <header>
+    <h1>Diese Woche bei WIR — KW ${kw}</h1>
+    <div class="sub">${range} · ${rendered.length} Veranstaltung${rendered.length === 1 ? '' : 'en'} · automatisch generiert</div>
+    <a class="csv" href="events-KW${kw}.csv" download>📄 CSV für Figma herunterladen</a>
+  </header>
+  ${coverName ? `<div class="cover"><img src="${coverName}" alt="Cover"></div>` : ''}
+  <div class="grid">${cards}</div>
+</body></html>\n`;
+  await fs.writeFile(path.join(OUT, 'index.html'), html, 'utf8');
 }
 
 async function main() {
@@ -133,6 +209,7 @@ async function main() {
   const page = await browser.newPage();
   await page.setViewport({ width: 1080, height: 1080, deviceScaleFactor: 1 });
 
+  const rendered = [];
   let i = 0;
   for (const ev of week) {
     i += 1;
@@ -141,14 +218,15 @@ async function main() {
       .replaceAll('{{kw}}', kw)
       .replaceAll('{{weekday}}', format(ev.start, 'EEEE', { locale: de }))
       .replaceAll('{{date}}', format(ev.start, 'dd. MMMM', { locale: de }))
-      .replaceAll('{{time}}', format(ev.start, 'HH:mm') + (ev.end && !isNaN(ev.end) ? '–' + format(ev.end, 'HH:mm') : '') + ' Uhr')
+      .replaceAll('{{time}}', timeLabel(ev))
       .replaceAll('{{title}}', truncate(ev.title, 110))
       .replaceAll('{{location}}', ev.location || '')
       .replaceAll('{{description}}', truncate(ev.description, 220));
-    await renderTile(page, html);
-    const file = path.join(OUT, `kachel-KW${kw}-${String(i).padStart(2, '0')}.png`);
-    await page.screenshot({ path: file, type: 'png' });
-    console.log(`  ✓ ${path.basename(file)}  —  ${ev.title.slice(0, 50)}`);
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    const name = `kachel-KW${kw}-${String(i).padStart(2, '0')}.png`;
+    await page.screenshot({ path: path.join(OUT, name), type: 'png' });
+    rendered.push({ ev, name });
+    console.log(`  ✓ ${name}  —  ${ev.title.slice(0, 50)}`);
   }
 
   // Cover-Kachel
@@ -161,12 +239,17 @@ async function main() {
     .replaceAll('{{title}}', `Diese Woche bei WIR`)
     .replaceAll('{{location}}', `${week.length} Veranstaltung${week.length === 1 ? '' : 'en'}`)
     .replaceAll('{{description}}', '');
-  await renderTile(page, cover);
-  await page.screenshot({ path: path.join(OUT, `kachel-KW${kw}-00-cover.png`), type: 'png' });
-  console.log(`  ✓ kachel-KW${kw}-00-cover.png  —  Cover`);
+  await page.setContent(cover, { waitUntil: 'networkidle0' });
+  const coverName = `kachel-KW${kw}-00-cover.png`;
+  await page.screenshot({ path: path.join(OUT, coverName), type: 'png' });
+  console.log(`  ✓ ${coverName}  —  Cover`);
 
   await browser.close();
-  console.log(`\nFertig. ${week.length + 1} Kacheln in output/`);
+
+  // Begleit-Dateien fuer den festen Link
+  await writeCsv(rendered, kw);
+  await writeIndex(rendered, coverName, kw, weekStart, weekEnd);
+  console.log(`\nFertig. ${week.length + 1} Kacheln + CSV + index.html in output/`);
 }
 
 main().catch((err) => { console.error('FEHLER:', err); process.exit(1); });
