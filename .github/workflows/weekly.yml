@@ -13,6 +13,8 @@ jobs:
   render:
     runs-on: ubuntu-latest
     env:
+      # WICHTIG: Runner laeuft sonst auf UTC -> Uhrzeiten + Wochengrenzen waeren verschoben.
+      TZ: 'Europe/Berlin'
       # Test-Konfiguration (keine Geheimnisse) — rendert die echte WIR-Woche aus 2025.
       # Fuer Produktion spaeter: ICS_URL bzw. SOURCE=em-rest + Secrets, REF_DATE leeren, WEEK_OFFSET=1.
       ICS_URL: 'https://wir-halle.de/events/?ical=1'
