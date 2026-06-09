@@ -6,8 +6,8 @@ name: Weekly Tiles (Test A)
 #    auskommentiert, damit nicht ungewollt jede Woche laeuft. Spaeter aktivieren.
 on:
   workflow_dispatch:
-  # schedule:
-  #   - cron: '0 16 * * 0'
+  schedule:
+    - cron: '0 16 * * 0'   # Sonntag 16:00 UTC = 18:00 MESZ
 
 # Rechte fuer GitHub Pages — nutzt nur den eingebauten GITHUB_TOKEN, kein externes Secret.
 permissions:
