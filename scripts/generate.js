@@ -112,11 +112,10 @@ function timeLabel(ev) {
   return `${start}${end} Uhr`;
 }
 
-// --- CSV fuer Figma (Daten-Sync-Plugins) ---
-async function writeCsv(rendered, kw) {
-  const base = (process.env.PAGES_BASE_URL || '').replace(/\/$/, '');
-  const header = ['kw', 'weekday', 'date', 'time', 'title', 'location', 'description', 'url', 'image', 'image_url'];
-  const rows = rendered.map(({ ev, name }) => [
+// --- CSV fuer Figma (Daten-Sync-Plugins) — eine Zeile pro Event ---
+async function writeCsv(events, kw) {
+  const header = ['kw', 'weekday', 'date', 'time', 'title', 'location', 'description', 'url'];
+  const rows = events.map((ev) => [
     kw,
     format(ev.start, 'EEEE', { locale: de }),
     format(ev.start, 'dd.MM.yyyy'),
@@ -125,23 +124,20 @@ async function writeCsv(rendered, kw) {
     ev.location,
     ev.description,
     ev.url,
-    name,
-    base ? `${base}/${name}` : name,
   ].map(csvCell).join(','));
   const csv = [header.join(','), ...rows].join('\n') + '\n';
   await fs.writeFile(path.join(OUT, `events-KW${kw}.csv`), csv, 'utf8');
 }
 
-// --- Galerie-Seite (fester Link fuer die Redaktion) ---
-async function writeIndex(rendered, coverName, kw, weekStart, weekEnd) {
+// --- Galerie-Seite (fester Link fuer die Redaktion) — Karussell-Slides in Reihenfolge ---
+async function writeIndex(slides, kw, weekStart, weekEnd) {
   const range = `${format(weekStart, 'dd.MM.')}–${format(weekEnd, 'dd.MM.yyyy')}`;
-  const cards = rendered.map(({ ev, name }) => `
+  const cards = slides.map((s, idx) => `
     <figure class="card">
-      <a href="${name}" download><img src="${name}" alt="${htmlEscape(ev.title)}" loading="lazy"></a>
+      <a href="${s.name}" download><img src="${s.name}" alt="${htmlEscape(s.caption)}" loading="lazy"></a>
       <figcaption>
-        <strong>${htmlEscape(ev.title)}</strong>
-        <span>${htmlEscape(format(ev.start, 'EEEE dd.MM.', { locale: de }))} · ${htmlEscape(timeLabel(ev))}</span>
-        <a class="dl" href="${name}" download>PNG herunterladen</a>
+        <strong>${String(idx + 1).padStart(2, '0')} · ${htmlEscape(s.caption)}</strong>
+        <a class="dl" href="${s.name}" download>PNG herunterladen</a>
       </figcaption>
     </figure>`).join('');
 
@@ -166,11 +162,10 @@ async function writeIndex(rendered, coverName, kw, weekStart, weekEnd) {
 <body>
   <header>
     <h1>Diese Woche bei WIR — KW ${kw}</h1>
-    <div class="sub">${range} · ${rendered.length} Veranstaltung${rendered.length === 1 ? '' : 'en'} · automatisch generiert</div>
+    <div class="sub">${range} · ${slides.length} Karussell-Slide${slides.length === 1 ? '' : 's'} · automatisch generiert</div>
     <a class="csv" href="events-KW${kw}.csv" download>📄 CSV für Figma herunterladen</a>
     <a class="csv" style="background:#333" href="uebersicht.html">🌐 Website-Übersicht (Vorschau)</a>
   </header>
-  ${coverName ? `<div class="cover"><img src="${coverName}" alt="Cover"></div>` : ''}
   <div class="grid">${cards}</div>
 </body></html>\n`;
   await fs.writeFile(path.join(OUT, 'index.html'), html, 'utf8');
@@ -179,9 +174,9 @@ async function writeIndex(rendered, coverName, kw, weekStart, weekEnd) {
 // --- Website-Wochenuebersicht (Vorschau = exaktes HTML, das der WP-Shortcode spaeter ausgibt) ---
 // Pflicht aus dem Briefing: Liste statt Kacheln, im CD, "ansprechend + uebersichtlich".
 // Im WP-Plugin ersetzt eine EM-Schleife (scope=this-week, nur veroeffentlichte Events) die statischen <article>.
-async function writeOverview(rendered, kw, weekStart, weekEnd) {
+async function writeOverview(events, kw, weekStart, weekEnd) {
   const range = `${format(weekStart, 'dd.MM.')}–${format(weekEnd, 'dd.MM.yyyy')}`;
-  const rows = rendered.map(({ ev }) => `
+  const rows = events.map((ev) => `
     <article class="event">
       <time class="date" datetime="${format(ev.start, 'yyyy-MM-dd')}">
         <span class="wd">${htmlEscape(format(ev.start, 'EE', { locale: de }))}</span>
@@ -224,13 +219,66 @@ async function writeOverview(rendered, kw, weekStart, weekEnd) {
   <div class="wrap">
     <header>
       <h1>Diese Woche bei WIR</h1>
-      <div class="sub">KW ${kw} · ${range} · ${rendered.length} Veranstaltung${rendered.length === 1 ? '' : 'en'}</div>
+      <div class="sub">KW ${kw} · ${range} · ${events.length} Veranstaltung${events.length === 1 ? '' : 'en'}</div>
     </header>
     ${rows || '<div class="event"><div class="info"><p class="desc">Diese Woche sind keine Veranstaltungen eingetragen.</p></div></div>'}
     <footer>Automatisch erzeugt aus dem Veranstaltungskalender · wir-halle.de</footer>
   </div>
 </body></html>\n`;
   await fs.writeFile(path.join(OUT, 'uebersicht.html'), html, 'utf8');
+}
+
+// --- Karussell: Tages-Slide (Datums-Header oben + kompakte Event-Liste) ---
+function eventRow(ev) {
+  return `<li><span class="t">${htmlEscape(format(ev.start, 'HH:mm'))}</span>`
+    + `<span class="r"><span class="ti">${htmlEscape(truncate(ev.title, 95))}</span>`
+    + `${ev.location ? `<span class="loc">📍 ${htmlEscape(ev.location)}</span>` : ''}</span></li>`;
+}
+
+function daySlideHtml(kw, dateLine, isCont, rowsHtml) {
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  /* PLATZHALTER-CD — echte Farben/Fonts ersetzen diese Werte. */
+  .slide{position:relative;width:1080px;height:1080px;overflow:hidden;
+    font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:#1a1a2e;color:#fff;padding:78px 80px}
+  .slide::before{content:"";position:absolute;left:0;top:0;bottom:0;width:22px;background:#e94560}
+  .brand{font-size:30px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#e94560}
+  .kw{font-size:24px;color:#b8b8d0;margin-top:4px}
+  .datehead{font-size:62px;font-weight:800;margin-top:30px;line-height:1.04}
+  .cont{font-size:28px;color:#b8b8d0;margin-top:8px;font-style:italic}
+  ul.list{list-style:none;margin-top:28px}
+  li{display:flex;gap:26px;padding:22px 0;border-bottom:1px solid rgba(255,255,255,.14);align-items:flex-start}
+  li:last-child{border-bottom:0}
+  .t{flex:0 0 150px;font-size:40px;font-weight:800;color:#e94560;white-space:nowrap;line-height:1.2}
+  .r{display:flex;flex-direction:column}
+  .ti{font-size:38px;font-weight:700;line-height:1.18}
+  .loc{font-size:28px;color:#b8b8d0;margin-top:8px}
+  </style></head><body><div class="slide">
+    <div class="brand">WIR · Halle</div><div class="kw">Kalenderwoche ${kw}</div>
+    <h1 class="datehead">${htmlEscape(dateLine)}</h1>
+    ${isCont ? '<div class="cont">Fortsetzung</div>' : ''}
+    <ul class="list">${rowsHtml}</ul>
+  </div></body></html>`;
+}
+
+// Verteilt die Events eines Tages auf so viele Slides wie noetig (misst echten Overflow im Browser).
+async function paginateDay(page, kw, dateLine, rows) {
+  const pages = [];
+  let i = 0;
+  while (i < rows.length) {
+    let fitTo = i; // mind. 1 Event pro Slide
+    for (let j = i; j < rows.length; j += 1) {
+      await page.setContent(daySlideHtml(kw, dateLine, i > 0, rows.slice(i, j + 1).join('')), { waitUntil: 'load' });
+      const overflow = await page.evaluate(() => {
+        const el = document.querySelector('.slide');
+        return el.scrollHeight - el.clientHeight;
+      });
+      if (overflow <= 1) fitTo = j; else break;
+    }
+    pages.push(rows.slice(i, fitTo + 1));
+    i = fitTo + 1;
+  }
+  return pages;
 }
 
 async function main() {
@@ -267,48 +315,58 @@ async function main() {
   const page = await browser.newPage();
   await page.setViewport({ width: 1080, height: 1080, deviceScaleFactor: 1 });
 
-  const rendered = [];
-  let i = 0;
+  // Events nach Tag gruppieren (week ist bereits chronologisch sortiert)
+  const days = [];
+  const byKey = new Map();
   for (const ev of week) {
-    i += 1;
-    const html = tpl
-      .replaceAll('{{kind}}', 'event')
-      .replaceAll('{{kw}}', kw)
-      .replaceAll('{{weekday}}', format(ev.start, 'EEEE', { locale: de }))
-      .replaceAll('{{date}}', format(ev.start, 'dd. MMMM', { locale: de }))
-      .replaceAll('{{time}}', timeLabel(ev))
-      .replaceAll('{{title}}', truncate(ev.title, 110))
-      .replaceAll('{{location}}', ev.location || '')
-      .replaceAll('{{description}}', truncate(ev.description, 220));
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    const name = `kachel-KW${kw}-${String(i).padStart(2, '0')}.png`;
-    await page.screenshot({ path: path.join(OUT, name), type: 'png' });
-    rendered.push({ ev, name });
-    console.log(`  ✓ ${name}  —  ${ev.title.slice(0, 50)}`);
+    const key = format(ev.start, 'yyyy-MM-dd');
+    if (!byKey.has(key)) { const d = { date: ev.start, events: [] }; byKey.set(key, d); days.push(d); }
+    byKey.get(key).events.push(ev);
   }
 
-  // Cover-Kachel
+  const slides = [];
+  let n = 0;
+  const shoot = async (caption) => {
+    n += 1;
+    const name = `slide-KW${kw}-${String(n).padStart(2, '0')}.png`;
+    await page.screenshot({ path: path.join(OUT, name), type: 'png', clip: { x: 0, y: 0, width: 1080, height: 1080 } });
+    slides.push({ name, caption });
+    console.log(`  ✓ ${name}  —  ${caption}`);
+  };
+
+  // Slide 1: Deckblatt (Cover-Variante der bestehenden Vorlage)
   const cover = tpl
     .replaceAll('{{kind}}', 'cover')
     .replaceAll('{{kw}}', kw)
     .replaceAll('{{weekday}}', '')
     .replaceAll('{{date}}', `${format(weekStart, 'dd.MM.')}–${format(weekEnd, 'dd.MM.yyyy')}`)
     .replaceAll('{{time}}', '')
-    .replaceAll('{{title}}', `Diese Woche bei WIR`)
+    .replaceAll('{{title}}', 'Diese Woche bei WIR')
     .replaceAll('{{location}}', `${week.length} Veranstaltung${week.length === 1 ? '' : 'en'}`)
     .replaceAll('{{description}}', '');
   await page.setContent(cover, { waitUntil: 'networkidle0' });
-  const coverName = `kachel-KW${kw}-00-cover.png`;
-  await page.screenshot({ path: path.join(OUT, coverName), type: 'png' });
-  console.log(`  ✓ ${coverName}  —  Cover`);
+  await shoot('Deckblatt');
+
+  // Pro Tag: eine oder mehrere Slides (Folge-Slide bei Ueberlauf)
+  for (const day of days) {
+    const dateLine = format(day.date, 'EEEE, d. MMMM', { locale: de }); // z.B. "Donnerstag, 11. September"
+    const shortLine = format(day.date, 'EE dd.MM.', { locale: de });
+    const rows = day.events.map(eventRow);
+    const pageList = await paginateDay(page, kw, dateLine, rows);
+    for (let p = 0; p < pageList.length; p += 1) {
+      await page.setContent(daySlideHtml(kw, dateLine, p > 0, pageList[p].join('')), { waitUntil: 'load' });
+      const part = pageList.length > 1 ? ` (${p + 1}/${pageList.length})` : '';
+      await shoot(`${shortLine}${part} — ${pageList[p].length} Event${pageList[p].length === 1 ? '' : 's'}`);
+    }
+  }
 
   await browser.close();
 
   // Begleit-Dateien fuer den festen Link
-  await writeCsv(rendered, kw);
-  await writeIndex(rendered, coverName, kw, weekStart, weekEnd);
-  await writeOverview(rendered, kw, weekStart, weekEnd);
-  console.log(`\nFertig. ${week.length + 1} Kacheln + CSV + index.html + uebersicht.html in output/`);
+  await writeCsv(week, kw);
+  await writeIndex(slides, kw, weekStart, weekEnd);
+  await writeOverview(week, kw, weekStart, weekEnd);
+  console.log(`\nFertig. ${slides.length} Karussell-Slides + CSV + index.html + uebersicht.html in output/`);
 }
 
 main().catch((err) => { console.error('FEHLER:', err); process.exit(1); });

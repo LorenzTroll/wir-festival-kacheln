@@ -31,7 +31,7 @@ jobs:
       # Test-Konfiguration (keine Geheimnisse) — rendert die echte WIR-Woche aus 2025.
       # Fuer Produktion spaeter: SOURCE=em-rest + Secrets, REF_DATE leeren, WEEK_OFFSET=1.
       ICS_URL: 'https://wir-halle.de/events/?ical=1'
-      REF_DATE: '2025-09-08'
+      REF_DATE: '2025-09-15'
       WEEK_OFFSET: '0'
       # Basis-URL fuer die image_url-Spalte in der CSV (Figma)
       PAGES_BASE_URL: 'https://lorenztroll.github.io/wir-festival-kacheln'
