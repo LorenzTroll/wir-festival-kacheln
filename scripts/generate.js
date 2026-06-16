@@ -309,6 +309,56 @@ async function packSlides(page, kw, days) {
   return slides;
 }
 
+// === System B: Datum an jeder Zeile (Chip), Events fliessen durch, Slides voll ===
+function eventRowB(ev) {
+  return `<li>
+    <div class="chip"><span class="wd">${htmlEscape(format(ev.start, 'EE', { locale: de }))}</span><span class="dn">${htmlEscape(format(ev.start, 'dd.MM.', { locale: de }))}</span></div>
+    <div class="r"><span class="ti"><span class="time">${htmlEscape(format(ev.start, 'HH:mm'))}</span>${htmlEscape(truncate(ev.title, 88))}</span>${ev.location ? `<span class="loc">📍 ${htmlEscape(ev.location)}</span>` : ''}</div>
+  </li>`;
+}
+
+function slideB(kw, rowsHtml) {
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  /* PLATZHALTER-CD — echte Farben/Fonts ersetzen diese Werte. */
+  .slide{position:relative;width:1080px;height:1080px;overflow:hidden;
+    font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:#1a1a2e;color:#fff;padding:70px 80px}
+  .slide::before{content:"";position:absolute;left:0;top:0;bottom:0;width:22px;background:#e94560}
+  .brand{font-size:30px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#e94560}
+  .kw{font-size:24px;color:#b8b8d0;margin-top:4px}
+  ul.list{list-style:none;margin-top:38px}
+  li{display:flex;gap:28px;padding:22px 0;border-bottom:1px solid rgba(255,255,255,.12);align-items:flex-start}
+  li:last-child{border-bottom:0}
+  .chip{flex:0 0 132px;display:flex;flex-direction:column;line-height:1.05}
+  .chip .wd{font-size:27px;font-weight:800;color:#e94560;text-transform:uppercase}
+  .chip .dn{font-size:33px;font-weight:800;color:#e94560}
+  .r{display:flex;flex-direction:column}
+  .ti{font-size:34px;font-weight:700;line-height:1.18}
+  .time{color:#b8b8d0;font-weight:800;margin-right:10px}
+  .loc{font-size:26px;color:#b8b8d0;margin-top:6px}
+  </style></head><body><div class="slide">
+    <div class="brand">WIR · Halle</div><div class="kw">Kalenderwoche ${kw} · Diese Woche</div>
+    <ul class="list">${rowsHtml}</ul>
+  </div></body></html>`;
+}
+
+// Zeilen-Packing: so viele Event-Zeilen wie passen pro Slide (Datum steht an jeder Zeile -> Umbruch egal).
+async function packRows(page, kw, items) {
+  const slides = [];
+  let i = 0;
+  while (i < items.length) {
+    let fitTo = i;
+    for (let j = i; j < items.length; j += 1) {
+      await page.setContent(slideB(kw, items.slice(i, j + 1).map((x) => x.html).join('')), { waitUntil: 'load' });
+      const ov = await page.evaluate(() => { const e = document.querySelector('.slide'); return e.scrollHeight - e.clientHeight; });
+      if (ov <= 1) fitTo = j; else break;
+    }
+    slides.push(items.slice(i, fitTo + 1));
+    i = fitTo + 1;
+  }
+  return slides;
+}
+
 async function main() {
   await loadEnv();
   const source = process.env.SOURCE || 'ics';
@@ -375,17 +425,29 @@ async function main() {
   await page.setContent(cover, { waitUntil: 'networkidle0' });
   await shoot('Deckblatt');
 
-  // Tages-Bloecke aufbauen und mit Bin-Packing auf Slides verteilen
-  const dayBlocks = days.map((day) => ({
-    dateLine: format(day.date, 'EEEE, d. MMMM', { locale: de }), // z.B. "Donnerstag, 11. September"
-    short: format(day.date, 'EE dd.MM.', { locale: de }),
-    rows: day.events.map(eventRow),
-  }));
-  const slideSections = await packSlides(page, kw, dayBlocks);
-  for (const sections of slideSections) {
-    await page.setContent(slideMultiHtml(kw, sections), { waitUntil: 'load' });
-    const caption = sections.map((s) => `${s.short}${s.isCont ? ' (Forts.)' : ''}`).join(' · ');
-    await shoot(caption);
+  // Layout waehlbar: 'chips' (System B, Standard) | 'days' (Tages-Bloecke mit Weissraum)
+  const layout = (process.env.LAYOUT || 'chips').toLowerCase();
+  if (layout === 'days') {
+    const dayBlocks = days.map((day) => ({
+      dateLine: format(day.date, 'EEEE, d. MMMM', { locale: de }), // z.B. "Donnerstag, 11. September"
+      short: format(day.date, 'EE dd.MM.', { locale: de }),
+      rows: day.events.map(eventRow),
+    }));
+    const slideSections = await packSlides(page, kw, dayBlocks);
+    for (const sections of slideSections) {
+      await page.setContent(slideMultiHtml(kw, sections), { waitUntil: 'load' });
+      const caption = sections.map((s) => `${s.short}${s.isCont ? ' (Forts.)' : ''}`).join(' · ');
+      await shoot(caption);
+    }
+  } else {
+    const items = week.map((ev) => ({ ev, html: eventRowB(ev) }));
+    const groups = await packRows(page, kw, items);
+    for (const g of groups) {
+      await page.setContent(slideB(kw, g.map((x) => x.html).join('')), { waitUntil: 'load' });
+      const fd = format(g[0].ev.start, 'EE dd.MM.', { locale: de });
+      const ld = format(g[g.length - 1].ev.start, 'EE dd.MM.', { locale: de });
+      await shoot(fd === ld ? fd : `${fd} – ${ld}`);
+    }
   }
 
   await browser.close();
