@@ -235,50 +235,78 @@ function eventRow(ev) {
     + `${ev.location ? `<span class="loc">📍 ${htmlEscape(ev.location)}</span>` : ''}</span></li>`;
 }
 
-function daySlideHtml(kw, dateLine, isCont, rowsHtml) {
+// Eine Slide kann mehrere Tages-Abschnitte (sections) enthalten; jeder beginnt mit seinem Datum.
+function slideMultiHtml(kw, sections) {
+  const blocks = sections.map((s) => `
+    <section class="day">
+      <h2 class="datehead">${htmlEscape(s.dateLine)}${s.isCont ? ' <span class="cont">· Fortsetzung</span>' : ''}</h2>
+      <ul class="list">${s.rows.join('')}</ul>
+    </section>`).join('');
   return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>
   *{margin:0;padding:0;box-sizing:border-box}
   /* PLATZHALTER-CD — echte Farben/Fonts ersetzen diese Werte. */
   .slide{position:relative;width:1080px;height:1080px;overflow:hidden;
-    font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:#1a1a2e;color:#fff;padding:78px 80px}
+    font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:#1a1a2e;color:#fff;padding:70px 80px}
   .slide::before{content:"";position:absolute;left:0;top:0;bottom:0;width:22px;background:#e94560}
   .brand{font-size:30px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#e94560}
   .kw{font-size:24px;color:#b8b8d0;margin-top:4px}
-  .datehead{font-size:62px;font-weight:800;margin-top:30px;line-height:1.04}
-  .cont{font-size:28px;color:#b8b8d0;margin-top:8px;font-style:italic}
-  ul.list{list-style:none;margin-top:28px}
-  li{display:flex;gap:26px;padding:22px 0;border-bottom:1px solid rgba(255,255,255,.14);align-items:flex-start}
+  .day{margin-top:42px}
+  .day:first-of-type{margin-top:30px}
+  .day + .day{padding-top:34px;border-top:2px solid rgba(255,255,255,.16)}
+  .datehead{font-size:48px;font-weight:800;line-height:1.05}
+  .cont{font-size:26px;color:#b8b8d0;font-style:italic;font-weight:600}
+  ul.list{list-style:none;margin-top:20px}
+  li{display:flex;gap:24px;padding:18px 0;border-bottom:1px solid rgba(255,255,255,.12);align-items:flex-start}
   li:last-child{border-bottom:0}
-  .t{flex:0 0 150px;font-size:40px;font-weight:800;color:#e94560;white-space:nowrap;line-height:1.2}
+  .t{flex:0 0 140px;font-size:36px;font-weight:800;color:#e94560;white-space:nowrap;line-height:1.2}
   .r{display:flex;flex-direction:column}
-  .ti{font-size:38px;font-weight:700;line-height:1.18}
-  .loc{font-size:28px;color:#b8b8d0;margin-top:8px}
+  .ti{font-size:34px;font-weight:700;line-height:1.18}
+  .loc{font-size:26px;color:#b8b8d0;margin-top:6px}
   </style></head><body><div class="slide">
     <div class="brand">WIR · Halle</div><div class="kw">Kalenderwoche ${kw}</div>
-    <h1 class="datehead">${htmlEscape(dateLine)}</h1>
-    ${isCont ? '<div class="cont">Fortsetzung</div>' : ''}
-    <ul class="list">${rowsHtml}</ul>
+    ${blocks}
   </div></body></html>`;
 }
 
-// Verteilt die Events eines Tages auf so viele Slides wie noetig (misst echten Overflow im Browser).
-async function paginateDay(page, kw, dateLine, rows) {
-  const pages = [];
-  let i = 0;
-  while (i < rows.length) {
-    let fitTo = i; // mind. 1 Event pro Slide
-    for (let j = i; j < rows.length; j += 1) {
-      await page.setContent(daySlideHtml(kw, dateLine, i > 0, rows.slice(i, j + 1).join('')), { waitUntil: 'load' });
-      const overflow = await page.evaluate(() => {
-        const el = document.querySelector('.slide');
-        return el.scrollHeight - el.clientHeight;
-      });
-      if (overflow <= 1) fitTo = j; else break;
+// Bin-Packing auf Tagesebene: ganze Tage hintereinander auf eine Slide, solange Platz ist.
+// Passt der naechste ganze Tag nicht mehr -> Weissraum lassen, neue Slide. Ein einzelner
+// Tag, der allein nicht auf eine Slide passt, wird (nur dann) auf Folge-Slides aufgeteilt.
+async function packSlides(page, kw, days) {
+  const slides = [];
+  let cur = [];
+  const mkSec = (day, isCont, rows) => ({ dateLine: day.dateLine, short: day.short, isCont, rows });
+  const fits = async (sections) => {
+    await page.setContent(slideMultiHtml(kw, sections), { waitUntil: 'load' });
+    const ov = await page.evaluate(() => { const e = document.querySelector('.slide'); return e.scrollHeight - e.clientHeight; });
+    return ov <= 1;
+  };
+
+  for (const day of days) {
+    // 1) Passt der ganze Tag noch zusaetzlich auf die aktuelle Slide?
+    if (await fits(cur.concat([mkSec(day, false, day.rows)]))) {
+      cur = cur.concat([mkSec(day, false, day.rows)]);
+      continue;
     }
-    pages.push(rows.slice(i, fitTo + 1));
-    i = fitTo + 1;
+    // 2) Nein -> aktuelle Slide abschliessen (Weissraum bleibt), Tag auf frischer Slide versuchen.
+    if (cur.length > 0) {
+      slides.push(cur);
+      cur = [];
+      if (await fits([mkSec(day, false, day.rows)])) { cur = [mkSec(day, false, day.rows)]; continue; }
+    }
+    // 3) Tag passt auch allein nicht -> auf Folge-Slides aufteilen.
+    let i = 0; let first = true;
+    while (i < day.rows.length) {
+      let fitTo = i;
+      for (let j = i; j < day.rows.length; j += 1) {
+        if (await fits(cur.concat([mkSec(day, !first, day.rows.slice(i, j + 1))]))) fitTo = j; else break;
+      }
+      cur = cur.concat([mkSec(day, !first, day.rows.slice(i, fitTo + 1))]);
+      i = fitTo + 1; first = false;
+      if (i < day.rows.length) { slides.push(cur); cur = []; } // letzter Teil bleibt in cur -> naechster Tag darf folgen
+    }
   }
-  return pages;
+  if (cur.length > 0) slides.push(cur);
+  return slides;
 }
 
 async function main() {
@@ -347,17 +375,17 @@ async function main() {
   await page.setContent(cover, { waitUntil: 'networkidle0' });
   await shoot('Deckblatt');
 
-  // Pro Tag: eine oder mehrere Slides (Folge-Slide bei Ueberlauf)
-  for (const day of days) {
-    const dateLine = format(day.date, 'EEEE, d. MMMM', { locale: de }); // z.B. "Donnerstag, 11. September"
-    const shortLine = format(day.date, 'EE dd.MM.', { locale: de });
-    const rows = day.events.map(eventRow);
-    const pageList = await paginateDay(page, kw, dateLine, rows);
-    for (let p = 0; p < pageList.length; p += 1) {
-      await page.setContent(daySlideHtml(kw, dateLine, p > 0, pageList[p].join('')), { waitUntil: 'load' });
-      const part = pageList.length > 1 ? ` (${p + 1}/${pageList.length})` : '';
-      await shoot(`${shortLine}${part} — ${pageList[p].length} Event${pageList[p].length === 1 ? '' : 's'}`);
-    }
+  // Tages-Bloecke aufbauen und mit Bin-Packing auf Slides verteilen
+  const dayBlocks = days.map((day) => ({
+    dateLine: format(day.date, 'EEEE, d. MMMM', { locale: de }), // z.B. "Donnerstag, 11. September"
+    short: format(day.date, 'EE dd.MM.', { locale: de }),
+    rows: day.events.map(eventRow),
+  }));
+  const slideSections = await packSlides(page, kw, dayBlocks);
+  for (const sections of slideSections) {
+    await page.setContent(slideMultiHtml(kw, sections), { waitUntil: 'load' });
+    const caption = sections.map((s) => `${s.short}${s.isCont ? ' (Forts.)' : ''}`).join(' · ');
+    await shoot(caption);
   }
 
   await browser.close();
