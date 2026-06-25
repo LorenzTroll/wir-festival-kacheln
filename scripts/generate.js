@@ -26,19 +26,20 @@ let SVG_RAW = '';    // sanitisiertes Logo-SVG (Recoloring zur Render-Zeit)
 
 // Farb-Themes (bg=Hintergrund, text=Text+Linien, accent=Cover-Highlight, logo=SVG-Farbe).
 // Weitere Varianten einfach hier ergaenzen; Auswahl per THEME-Env oder einzeln BG_COLOR/TEXT_COLOR/ACCENT_COLOR/LOGO_COLOR.
+// 5 Paletten (bg=Hintergrund, text=Text+Linien, accent=Cover-Box, logo=SVG, huText="Wochenuebersicht"-Schrift).
 const THEMES = {
-  lila: { bg: '#76519b', text: '#e9e8e8', accent: '#ff5100', logo: '#ffffff' },
-  // TODO: echte Farben vom Kunden einsetzen — bis dahin Platzhalter (= lila).
-  zwei: { bg: '#76519b', text: '#e9e8e8', accent: '#ff5100', logo: '#ffffff' },
-  drei: { bg: '#76519b', text: '#e9e8e8', accent: '#ff5100', logo: '#ffffff' },
-  vier: { bg: '#76519b', text: '#e9e8e8', accent: '#ff5100', logo: '#ffffff' },
-  fuenf: { bg: '#76519b', text: '#e9e8e8', accent: '#ff5100', logo: '#ffffff' },
+  p1: { bg: '#E6E6E6', text: '#FF5100', accent: '#FF5100', logo: '#FF5100', huText: '#E6E6E6' },
+  p2: { bg: '#EBE394', text: '#FF5100', accent: '#FF5100', logo: '#FF5100', huText: '#E9E8E8' },
+  p3: { bg: '#C4DEE4', text: '#FF5100', accent: '#FF5100', logo: '#FF5100', huText: '#C4DEE4' },
+  p4: { bg: '#FF5100', text: '#FFFFFF', accent: '#FFFFFF', logo: '#FFFFFF', huText: '#FF5100' },
+  p5: { bg: '#76519B', text: '#E9E8E8', accent: '#FF5100', logo: '#FFFFFF', huText: '#E9E8E8' },
 };
-// Woechentliche Rotation: Reihenfolge der 5 Paletten. Index = Kalenderwoche mod 5 -> jede Woche die naechste.
-const PALETTE_CYCLE = ['lila', 'zwei', 'drei', 'vier', 'fuenf'];
-let COLORS = THEMES.lila;
+// Woechentliche Rotation: Reihenfolge der Paletten. Index = Kalenderwoche mod 5 -> jede Woche die naechste,
+// nach 5 von vorn. Die Kalenderwoche ist der Zaehler -> kein Speichern des letzten Standes noetig.
+const PALETTE_CYCLE = ['p1', 'p2', 'p3', 'p4', 'p5'];
+let COLORS = THEMES.p1;
 function resolveColors(kw) {
-  // Explizite Auswahl (THEME=...) gewinnt zum Testen; sonst automatisch nach Kalenderwoche rotieren.
+  // Explizite Auswahl (THEME=p1..p5) gewinnt zum Testen; sonst automatisch nach Kalenderwoche rotieren.
   let name = (process.env.THEME || '').toLowerCase();
   if (!name || !THEMES[name]) name = PALETTE_CYCLE[(parseInt(kw, 10) || 0) % PALETTE_CYCLE.length];
   const t = THEMES[name];
@@ -47,6 +48,7 @@ function resolveColors(kw) {
     text: process.env.TEXT_COLOR || t.text,
     accent: process.env.ACCENT_COLOR || t.accent,
     logo: process.env.LOGO_COLOR || t.logo,
+    huText: process.env.HU_TEXT_COLOR || t.huText,
   };
 }
 
@@ -146,7 +148,7 @@ function coverHtml(weekStart, weekEnd) {
   ${baseCss()}
   .logo{position:absolute;top:118px;left:319px;width:442px;height:auto}
   .dots{position:absolute;top:668px;left:28px;width:1024px;border-top:7px dotted ${COLORS.text}}
-  .hu{position:absolute;left:28px;top:740px;font-size:100px;font-weight:700;line-height:1.16;letter-spacing:-1px}
+  .hu{position:absolute;left:28px;top:740px;font-size:100px;font-weight:700;line-height:1.16;letter-spacing:-1px;color:${COLORS.huText}}
   .hu span{background:${COLORS.accent};padding:4px 12px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
   .range{position:absolute;right:42px;bottom:60px;font-size:150px;font-weight:700;line-height:1;text-align:right}
   </style></head><body><div class="page">
