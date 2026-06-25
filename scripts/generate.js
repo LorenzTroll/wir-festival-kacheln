@@ -143,7 +143,7 @@ function slideHtml(sections) {
   }).join('');
   return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${FONT_CSS}
   ${BASE_CSS}
-  .page{padding:40px 40px 48px}
+  .page{padding:40px}
   .day{margin-top:30px}
   .day:first-child{margin-top:4px}
   .day + .day{border-top:5px solid #e9e8e8;padding-top:26px}
@@ -156,6 +156,7 @@ function slideHtml(sections) {
   ul.list{list-style:none;margin-top:24px}
   li{display:flex;gap:34px;padding:22px 0}
   li + li{border-top:7px dotted #e9e8e8}
+  .day:last-child .list li:last-child{padding-bottom:0} /* unterer Rand = oberer, spart Platz */
   .cl{flex:0 0 330px}
   .time{font-size:40px;font-weight:700;line-height:1.15}
   .loc{font-size:40px;font-style:italic;font-weight:400;line-height:1.2;margin-top:2px}
