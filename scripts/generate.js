@@ -36,8 +36,11 @@ async function loadEnv() {
 
 async function loadAssets() {
   FONT_CSS = await fs.readFile(path.join(ROOT, 'template/fonts/host-grotesk.css'), 'utf8');
-  const svg = await fs.readFile(path.join(ROOT, 'template/assets/wir-festival-logo.svg'));
-  LOGO_DATA = `data:image/svg+xml;base64,${svg.toString('base64')}`;
+  let svg = await fs.readFile(path.join(ROOT, 'template/assets/wir-festival-logo.svg'), 'utf8');
+  // Figma exportiert das Logo mit preserveAspectRatio="none" + 100% -> wuerde verzerren. Aspekt erhalten.
+  svg = svg.replace('preserveAspectRatio="none"', 'preserveAspectRatio="xMidYMid meet"')
+    .replace('width="100%" height="100%"', 'width="413.331" height="355.089"');
+  LOGO_DATA = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
 }
 
 function clean(str = '') {
@@ -105,7 +108,7 @@ const BASE_CSS = `*{margin:0;padding:0;box-sizing:border-box}
 function coverHtml(weekStart, weekEnd) {
   return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${FONT_CSS}
   ${BASE_CSS}
-  .logo{position:absolute;top:118px;left:319px;width:442px}
+  .logo{position:absolute;top:118px;left:319px;width:442px;height:auto}
   .dots{position:absolute;top:668px;left:28px;width:1024px;border-top:7px dotted #e9e8e8}
   .hu{position:absolute;left:28px;top:705px;font-size:100px;font-weight:700;line-height:1.04;letter-spacing:-1px}
   .hu span{background:#ff5100;padding:4px 12px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
@@ -145,10 +148,11 @@ function slideHtml(sections) {
   .day:first-child{margin-top:4px}
   .day + .day{border-top:5px solid #e9e8e8;padding-top:26px}
   .dayhead{display:flex;align-items:flex-end;gap:30px}
-  .day.alt .dayhead{justify-content:flex-end}
-  .bigdate{font-size:138px;font-weight:700;line-height:.78;letter-spacing:-2px}
-  .wd{font-size:62px;font-weight:700;line-height:1;padding-bottom:12px;border-bottom:5px solid #e9e8e8}
-  .wd em{font-style:italic;font-size:30px;font-weight:400;border:0}
+  .bigdate{flex:0 0 auto;font-size:138px;font-weight:700;line-height:.78;letter-spacing:-2px}
+  .wd{flex:1 1 auto;font-size:62px;font-weight:700;line-height:1;padding-bottom:12px;border-bottom:5px solid #e9e8e8}
+  .day:not(.alt) .wd{text-align:left}
+  .day.alt .wd{text-align:right}
+  .wd em{font-style:italic;font-size:30px;font-weight:400}
   ul.list{list-style:none;margin-top:24px}
   li{display:flex;gap:34px;padding:22px 0}
   li + li{border-top:3px dotted rgba(233,232,232,.6)}
@@ -166,32 +170,39 @@ async function setHtml(page, html) {
   await page.evaluate(() => (document.fonts ? document.fonts.ready : null));
 }
 
-// Bin-Packing auf Tagesebene: ganze Tage hintereinander auf eine Slide; passt der naechste
-// Tag nicht -> Weissraum, neue Slide. Einzelner zu grosser Tag -> Folge-Slide.
+// Dichtes Packing: Events fliessen durch, Slides werden voll ausgenutzt. Ein Tag darf
+// ueber Slides brechen — beginnt dann oben auf der neuen Slide wieder mit Datum (isCont).
 async function packSlides(page, days) {
   const slides = [];
   let cur = [];
-  const mkSec = (d, isCont, rows) => ({ bigDate: d.bigDate, weekday: d.weekday, alt: d.alt, short: d.short, isCont, rows });
-  const fits = async (sections) => {
-    await setHtml(page, slideHtml(sections));
+  const mkSec = (d, isCont) => ({ bigDate: d.bigDate, weekday: d.weekday, alt: d.alt, short: d.short, isCont, rows: [] });
+  const fits = async () => {
+    await setHtml(page, slideHtml(cur));
     const ov = await page.evaluate(() => { const e = document.querySelector('.page'); return e.scrollHeight - e.clientHeight; });
     return ov <= 1;
   };
   for (const d of days) {
-    if (await fits(cur.concat([mkSec(d, false, d.rows)]))) { cur = cur.concat([mkSec(d, false, d.rows)]); continue; }
-    if (cur.length > 0) {
-      slides.push(cur); cur = [];
-      if (await fits([mkSec(d, false, d.rows)])) { cur = [mkSec(d, false, d.rows)]; continue; }
-    }
-    let i = 0; let first = true;
-    while (i < d.rows.length) {
-      let fitTo = i;
-      for (let j = i; j < d.rows.length; j += 1) {
-        if (await fits(cur.concat([mkSec(d, !first, d.rows.slice(i, j + 1))]))) fitTo = j; else break;
+    let idx = 0;
+    let isCont = false;
+    while (idx < d.rows.length) {
+      const sec = mkSec(d, isCont);
+      cur.push(sec);
+      let added = 0;
+      while (idx < d.rows.length) {
+        sec.rows.push(d.rows[idx]);
+        if (await fits()) { idx += 1; added += 1; } else { sec.rows.pop(); break; }
       }
-      cur = cur.concat([mkSec(d, !first, d.rows.slice(i, fitTo + 1))]);
-      i = fitTo + 1; first = false;
-      if (i < d.rows.length) { slides.push(cur); cur = []; }
+      if (added === 0) {
+        cur.pop(); // leere Section entfernen
+        if (cur.length > 0) { slides.push(cur); cur = []; } // Tag oben auf neuer Slide (isCont bleibt false)
+        else { // selbst eine Zeile passt allein nicht -> erzwingen
+          sec.rows.push(d.rows[idx]); idx += 1; cur.push(sec);
+          if (idx < d.rows.length) { slides.push(cur); cur = []; isCont = true; }
+        }
+      } else if (idx < d.rows.length) {
+        slides.push(cur); cur = []; isCont = true; // Slide voll, Tag laeuft als Folge weiter
+      }
+      // sonst: Tag fertig auf dieser Slide -> cur behalten, naechster Tag packt direkt an
     }
   }
   if (cur.length > 0) slides.push(cur);
