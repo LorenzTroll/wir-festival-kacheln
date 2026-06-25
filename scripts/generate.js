@@ -222,9 +222,9 @@ async function writeIndex(slides, kw, weekStart, weekEnd) {
   const range = `${dayDate(weekStart)} – ${dayDate(weekEnd)}`;
   const cards = slides.map((s, idx) => `
     <figure class="card">
-      <a href="${s.name}" download><img src="${s.name}" alt="${htmlEscape(s.caption)}" loading="lazy"></a>
+      <a href="${s.name}" target="_blank" rel="noopener" title="In voller Auflösung öffnen"><img src="${s.name}" alt="${htmlEscape(s.caption)}" loading="lazy"></a>
       <figcaption><strong>${String(idx + 1).padStart(2, '0')} · ${htmlEscape(s.caption)}</strong>
-        <a class="dl" href="${s.name}" download>JPG herunterladen</a></figcaption>
+        <span class="links"><a href="${s.name}" target="_blank" rel="noopener">Vollbild</a> · <a class="dl" href="${s.name}" download>herunterladen</a></span></figcaption>
     </figure>`).join('');
   const html = `<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
@@ -232,10 +232,11 @@ async function writeIndex(slides, kw, weekStart, weekEnd) {
   body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#3a2a52;color:#fff;margin:0;padding:40px}
   header{max-width:1100px;margin:0 auto 28px}h1{margin:0;font-size:30px}.sub{color:#d9cfe8;margin-top:6px}
   .csv{display:inline-block;margin-top:16px;margin-right:10px;background:#ff5100;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600}
-  .grid{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:22px}
-  .card{margin:0;background:#76519b;border-radius:12px;overflow:hidden}.card img{width:100%;display:block}
-  figcaption{padding:14px;display:flex;flex-direction:column;gap:6px;font-size:14px}
-  .dl{color:#ff8a4d;text-decoration:none;font-weight:600}
+  .grid{max-width:1320px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:24px}
+  .card{margin:0;background:#76519b;border-radius:12px;overflow:hidden}
+  .card img{width:100%;height:auto;display:block;cursor:zoom-in}
+  figcaption{padding:14px;display:flex;flex-direction:column;gap:8px;font-size:14px}
+  .links a{color:#ff8a4d;text-decoration:none;font-weight:600}.dl{color:#ff8a4d}
 </style></head><body>
   <header><h1>WIR-Festival — Wochenübersicht KW ${kw}</h1>
     <div class="sub">${range} · ${slides.length} Slides · automatisch generiert</div>
