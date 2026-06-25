@@ -28,10 +28,20 @@ let SVG_RAW = '';    // sanitisiertes Logo-SVG (Recoloring zur Render-Zeit)
 // Weitere Varianten einfach hier ergaenzen; Auswahl per THEME-Env oder einzeln BG_COLOR/TEXT_COLOR/ACCENT_COLOR/LOGO_COLOR.
 const THEMES = {
   lila: { bg: '#76519b', text: '#e9e8e8', accent: '#ff5100', logo: '#ffffff' },
+  // TODO: echte Farben vom Kunden einsetzen — bis dahin Platzhalter (= lila).
+  zwei: { bg: '#76519b', text: '#e9e8e8', accent: '#ff5100', logo: '#ffffff' },
+  drei: { bg: '#76519b', text: '#e9e8e8', accent: '#ff5100', logo: '#ffffff' },
+  vier: { bg: '#76519b', text: '#e9e8e8', accent: '#ff5100', logo: '#ffffff' },
+  fuenf: { bg: '#76519b', text: '#e9e8e8', accent: '#ff5100', logo: '#ffffff' },
 };
+// Woechentliche Rotation: Reihenfolge der 5 Paletten. Index = Kalenderwoche mod 5 -> jede Woche die naechste.
+const PALETTE_CYCLE = ['lila', 'zwei', 'drei', 'vier', 'fuenf'];
 let COLORS = THEMES.lila;
-function resolveColors() {
-  const t = THEMES[(process.env.THEME || 'lila').toLowerCase()] || THEMES.lila;
+function resolveColors(kw) {
+  // Explizite Auswahl (THEME=...) gewinnt zum Testen; sonst automatisch nach Kalenderwoche rotieren.
+  let name = (process.env.THEME || '').toLowerCase();
+  if (!name || !THEMES[name]) name = PALETTE_CYCLE[(parseInt(kw, 10) || 0) % PALETTE_CYCLE.length];
+  const t = THEMES[name];
   COLORS = {
     bg: process.env.BG_COLOR || t.bg,
     text: process.env.TEXT_COLOR || t.text,
@@ -311,13 +321,13 @@ async function writeOverview(events, kw, weekStart, weekEnd) {
 async function main() {
   await loadEnv();
   await loadAssets();
-  resolveColors();
   const source = process.env.SOURCE || 'ics';
   const ref = process.env.REF_DATE ? parseISO(process.env.REF_DATE) : new Date();
   const offset = parseInt(process.env.WEEK_OFFSET ?? '1', 10);
   const weekStart = startOfWeek(addWeeks(ref, offset), { weekStartsOn: 1 });
   const weekEnd = endOfWeek(addWeeks(ref, offset), { weekStartsOn: 1 });
   const kw = format(weekStart, 'II', { locale: de });
+  resolveColors(kw); // Palette der Woche
 
   console.log(`Quelle: ${source} · Zielwoche KW ${kw} (${dayDate(weekStart)}–${dayDate(weekEnd)})`);
   const all = source === 'em-rest' ? await fetchFromEMRest() : await fetchFromICS(process.env.ICS_URL);

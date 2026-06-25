@@ -5,6 +5,8 @@ name: Weekly Tiles (Test A)
 #  - schedule: Cron, Sonntag 16:00 UTC (= 18:00 MESZ). Fuer den reinen Test
 #    auskommentiert, damit nicht ungewollt jede Woche laeuft. Spaeter aktivieren.
 on:
+  push:
+    branches: [main]        # jede Aenderung geht automatisch live (kein manuelles Ausloesen noetig)
   workflow_dispatch:
   schedule:
     - cron: '30 1 * * 1'    # Montag 01:30 UTC = 03:30 MESZ — Nacht Sonntag->Montag
