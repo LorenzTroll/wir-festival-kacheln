@@ -48,6 +48,7 @@ function clean(str = '') {
     .replace(/<[^>]+>/g, ' ').replace(/&nbsp;?/gi, ' ')
     .replace(/&amp;/gi, '&').replace(/&quot;/gi, '"')
     .replace(/&#0?39;|&rsquo;|&lsquo;/gi, "'").replace(/&ndash;|&mdash;/gi, '–')
+    .replace(/\\(["';,\\])/g, '$1') // verbleibende iCal-Escapes (z.B. \") entfernen
     .replace(/\s+/g, ' ').trim();
 }
 function venue(loc = '') { return clean(loc).split(',')[0].trim(); }

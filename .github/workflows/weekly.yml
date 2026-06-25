@@ -28,10 +28,10 @@ jobs:
     env:
       # WICHTIG: Runner laeuft sonst auf UTC -> Uhrzeiten + Wochengrenzen waeren verschoben.
       TZ: 'Europe/Berlin'
-      # Test-Konfiguration (keine Geheimnisse) — rendert die echte WIR-Woche aus 2025.
-      # Fuer Produktion spaeter: SOURCE=em-rest + Secrets, REF_DATE leeren, WEEK_OFFSET=1.
-      ICS_URL: 'https://wir-halle.de/events/?ical=1'
-      REF_DATE: '2025-09-15'
+      # Aktueller Feed (echte kommende Events). Review-Woche fest auf KW27/2026 gesetzt;
+      # fuer vollen Live-Betrieb REF_DATE leeren -> rechnet ab heute ("diese Woche").
+      ICS_URL: 'https://wir-halle.de/events.ics'
+      REF_DATE: '2026-06-29'
       WEEK_OFFSET: '0'
       # Basis-URL fuer die image_url-Spalte in der CSV (Figma)
       PAGES_BASE_URL: 'https://lorenztroll.github.io/wir-festival-kacheln'
