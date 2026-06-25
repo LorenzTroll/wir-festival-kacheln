@@ -218,13 +218,14 @@ async function writeCsv(events, kw) {
   await fs.writeFile(path.join(OUT, `events-KW${kw}.csv`), [header.join(','), ...rows].join('\n') + '\n', 'utf8');
 }
 
-async function writeIndex(slides, kw, weekStart, weekEnd) {
+async function writeIndex(slides, kw, weekStart, weekEnd, build) {
   const range = `${dayDate(weekStart)} – ${dayDate(weekEnd)}`;
+  const v = `?v=${build}`; // Cache-Buster: erzwingt frische Bilder nach jedem Deploy
   const cards = slides.map((s, idx) => `
     <figure class="card">
-      <a href="${s.name}" target="_blank" rel="noopener" title="In voller Auflösung öffnen"><img src="${s.name}" alt="${htmlEscape(s.caption)}" loading="lazy"></a>
+      <a href="${s.name}${v}" target="_blank" rel="noopener" title="In voller Auflösung öffnen"><img src="${s.name}${v}" alt="${htmlEscape(s.caption)}" loading="lazy"></a>
       <figcaption><strong>${String(idx + 1).padStart(2, '0')} · ${htmlEscape(s.caption)}</strong>
-        <span class="links"><a href="${s.name}" target="_blank" rel="noopener">Vollbild</a> · <a class="dl" href="${s.name}" download>herunterladen</a></span></figcaption>
+        <span class="links"><a href="${s.name}${v}" target="_blank" rel="noopener">Vollbild</a> · <a class="dl" href="${s.name}${v}" download>herunterladen</a></span></figcaption>
     </figure>`).join('');
   const html = `<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
@@ -340,7 +341,7 @@ async function main() {
 
   await browser.close();
   await writeCsv(week, kw);
-  await writeIndex(slides, kw, weekStart, weekEnd);
+  await writeIndex(slides, kw, weekStart, weekEnd, Date.now());
   await writeOverview(week, kw, weekStart, weekEnd);
   console.log(`\nFertig. ${slides.length} Slides (JPG) + CSV + index.html + uebersicht.html`);
 }
