@@ -111,7 +111,7 @@ function coverHtml(weekStart, weekEnd) {
   ${BASE_CSS}
   .logo{position:absolute;top:118px;left:319px;width:442px;height:auto}
   .dots{position:absolute;top:668px;left:28px;width:1024px;border-top:7px dotted #e9e8e8}
-  .hu{position:absolute;left:28px;top:705px;font-size:100px;font-weight:700;line-height:1.04;letter-spacing:-1px}
+  .hu{position:absolute;left:28px;top:740px;font-size:100px;font-weight:700;line-height:1.16;letter-spacing:-1px}
   .hu span{background:#ff5100;padding:4px 12px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
   .range{position:absolute;right:42px;bottom:60px;font-size:150px;font-weight:700;line-height:1;text-align:right}
   </style></head><body><div class="page">
@@ -135,12 +135,11 @@ function eventRow(ev) {
 // --- Listen-Slide: ein oder mehrere Tages-Abschnitte; Tag-Header alterniert (Figma B) ---
 function slideHtml(sections) {
   const blocks = sections.map((s) => {
-    const wd = `<span class="wd">${htmlEscape(s.weekday)}${s.isCont ? ' <em>Forts.</em>' : ''}</span>`;
+    // Folge-Abschnitt eines Tages (isCont): kein Datums-Header, Liste laeuft einfach weiter.
+    const wd = `<span class="wd">${htmlEscape(s.weekday)}</span>`;
     const bd = `<span class="bigdate">${htmlEscape(s.bigDate)}</span>`;
-    return `<section class="day${s.alt ? ' alt' : ''}">
-      <div class="dayhead">${s.alt ? wd + bd : bd + wd}</div>
-      <ul class="list">${s.rows.join('')}</ul>
-    </section>`;
+    const head = s.isCont ? '' : `<div class="dayhead">${s.alt ? wd + bd : bd + wd}</div>`;
+    return `<section class="day${s.alt ? ' alt' : ''}">${head}<ul class="list">${s.rows.join('')}</ul></section>`;
   }).join('');
   return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${FONT_CSS}
   ${BASE_CSS}
@@ -156,7 +155,7 @@ function slideHtml(sections) {
   .wd em{font-style:italic;font-size:30px;font-weight:400}
   ul.list{list-style:none;margin-top:24px}
   li{display:flex;gap:34px;padding:22px 0}
-  li + li{border-top:3px dotted rgba(233,232,232,.6)}
+  li + li{border-top:7px dotted #e9e8e8}
   .cl{flex:0 0 330px}
   .time{font-size:40px;font-weight:700;line-height:1.15}
   .loc{font-size:40px;font-style:italic;font-weight:400;line-height:1.2;margin-top:2px}
