@@ -22,7 +22,23 @@ const W = 1080;
 const H = 1350; // Hochformat (Instagram 4:5)
 
 let FONT_CSS = '';   // @font-face mit data-URIs (offline, deterministisch)
-let LOGO_DATA = '';  // wir-festival-Logo als data-URI
+let SVG_RAW = '';    // sanitisiertes Logo-SVG (Recoloring zur Render-Zeit)
+
+// Farb-Themes (bg=Hintergrund, text=Text+Linien, accent=Cover-Highlight, logo=SVG-Farbe).
+// Weitere Varianten einfach hier ergaenzen; Auswahl per THEME-Env oder einzeln BG_COLOR/TEXT_COLOR/ACCENT_COLOR/LOGO_COLOR.
+const THEMES = {
+  lila: { bg: '#76519b', text: '#e9e8e8', accent: '#ff5100', logo: '#ffffff' },
+};
+let COLORS = THEMES.lila;
+function resolveColors() {
+  const t = THEMES[(process.env.THEME || 'lila').toLowerCase()] || THEMES.lila;
+  COLORS = {
+    bg: process.env.BG_COLOR || t.bg,
+    text: process.env.TEXT_COLOR || t.text,
+    accent: process.env.ACCENT_COLOR || t.accent,
+    logo: process.env.LOGO_COLOR || t.logo,
+  };
+}
 
 async function loadEnv() {
   try {
@@ -40,7 +56,7 @@ async function loadAssets() {
   // Figma exportiert das Logo mit preserveAspectRatio="none" + 100% -> wuerde verzerren. Aspekt erhalten.
   svg = svg.replace('preserveAspectRatio="none"', 'preserveAspectRatio="xMidYMid meet"')
     .replace('width="100%" height="100%"', 'width="413.331" height="355.089"');
-  LOGO_DATA = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+  SVG_RAW = svg;
 }
 
 function clean(str = '') {
@@ -102,20 +118,29 @@ async function fetchFromEMRest() {
   }));
 }
 
-const BASE_CSS = `*{margin:0;padding:0;box-sizing:border-box}
-  .page{position:relative;width:${W}px;height:${H}px;overflow:hidden;background:#76519b;color:#e9e8e8;font-family:'Host Grotesk',sans-serif}`;
+function baseCss() {
+  return `*{margin:0;padding:0;box-sizing:border-box}
+  .page{position:relative;width:${W}px;height:${H}px;overflow:hidden;background:${COLORS.bg};color:${COLORS.text};font-family:'Host Grotesk',sans-serif}`;
+}
+function logoDataUri() {
+  // Figma-Export faerbt die Pfade ueber fill="var(--fill-0, white)" (23x) + ein fill="white".
+  const svg = SVG_RAW
+    .replace(/var\(--fill-0,\s*white\)/g, COLORS.logo)
+    .replace(/fill="white"/g, `fill="${COLORS.logo}"`);
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+}
 
 // --- Deckblatt (Figma A) ---
 function coverHtml(weekStart, weekEnd) {
   return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${FONT_CSS}
-  ${BASE_CSS}
+  ${baseCss()}
   .logo{position:absolute;top:118px;left:319px;width:442px;height:auto}
-  .dots{position:absolute;top:668px;left:28px;width:1024px;border-top:7px dotted #e9e8e8}
+  .dots{position:absolute;top:668px;left:28px;width:1024px;border-top:7px dotted ${COLORS.text}}
   .hu{position:absolute;left:28px;top:740px;font-size:100px;font-weight:700;line-height:1.16;letter-spacing:-1px}
-  .hu span{background:#ff5100;padding:4px 12px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+  .hu span{background:${COLORS.accent};padding:4px 12px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
   .range{position:absolute;right:42px;bottom:60px;font-size:150px;font-weight:700;line-height:1;text-align:right}
   </style></head><body><div class="page">
-    <img class="logo" src="${LOGO_DATA}" alt="wir festival">
+    <img class="logo" src="${logoDataUri()}" alt="wir festival">
     <div class="dots"></div>
     <div class="hu"><span>Wochen-<br>übersicht</span></div>
     <div class="range">${dayDate(weekStart)}<br>– ${dayDate(weekEnd)}</div>
@@ -142,20 +167,20 @@ function slideHtml(sections) {
     return `<section class="day${s.alt ? ' alt' : ''}">${head}<ul class="list">${s.rows.join('')}</ul></section>`;
   }).join('');
   return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${FONT_CSS}
-  ${BASE_CSS}
+  ${baseCss()}
   .page{padding:40px}
   .day{margin-top:30px}
   .day:first-child{margin-top:4px}
-  .day + .day{border-top:5px solid #e9e8e8;padding-top:26px}
+  .day + .day{border-top:5px solid ${COLORS.text};padding-top:26px}
   .dayhead{display:flex;align-items:flex-end;gap:30px}
   .bigdate{flex:0 0 auto;font-size:138px;font-weight:700;line-height:.78;letter-spacing:-2px}
-  .wd{flex:1 1 auto;font-size:62px;font-weight:700;line-height:1;padding-bottom:12px;border-bottom:5px solid #e9e8e8}
+  .wd{flex:1 1 auto;font-size:62px;font-weight:700;line-height:1;padding-bottom:12px;border-bottom:5px solid ${COLORS.text}}
   .day:not(.alt) .wd{text-align:left}
   .day.alt .wd{text-align:right}
   .wd em{font-style:italic;font-size:30px;font-weight:400}
   ul.list{list-style:none;margin-top:24px}
   li{display:flex;gap:34px;padding:22px 0}
-  li + li{border-top:7px dotted #e9e8e8}
+  li + li{border-top:7px dotted ${COLORS.text}}
   .day:last-child .list li:last-child{padding-bottom:0} /* unterer Rand = oberer, spart Platz */
   .cl{flex:0 0 330px}
   .time{font-size:40px;font-weight:700;line-height:1.15}
@@ -286,6 +311,7 @@ async function writeOverview(events, kw, weekStart, weekEnd) {
 async function main() {
   await loadEnv();
   await loadAssets();
+  resolveColors();
   const source = process.env.SOURCE || 'ics';
   const ref = process.env.REF_DATE ? parseISO(process.env.REF_DATE) : new Date();
   const offset = parseInt(process.env.WEEK_OFFSET ?? '1', 10);
