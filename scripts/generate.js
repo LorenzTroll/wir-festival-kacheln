@@ -142,15 +142,20 @@ function logoDataUri() {
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
 }
 
+// Cover-CSS — geteilt von Pipeline UND Editor.
+function coverCss() {
+  return `.logo{position:absolute;top:118px;left:319px;width:442px;height:auto}
+  .dots{position:absolute;top:668px;left:28px;width:1024px;border-top:7px dotted ${COLORS.text}}
+  .hu{position:absolute;left:28px;top:740px;font-size:100px;font-weight:700;line-height:1.16;letter-spacing:-1px;color:${COLORS.huText}}
+  .hu span{background:${COLORS.accent};padding:4px 12px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+  .range{position:absolute;right:42px;bottom:60px;font-size:150px;font-weight:700;line-height:1;text-align:right}`;
+}
+
 // --- Deckblatt (Figma A) ---
 function coverHtml(weekStart, weekEnd) {
   return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${FONT_CSS}
   ${baseCss()}
-  .logo{position:absolute;top:118px;left:319px;width:442px;height:auto}
-  .dots{position:absolute;top:668px;left:28px;width:1024px;border-top:7px dotted ${COLORS.text}}
-  .hu{position:absolute;left:28px;top:740px;font-size:100px;font-weight:700;line-height:1.16;letter-spacing:-1px;color:${COLORS.huText}}
-  .hu span{background:${COLORS.accent};padding:4px 12px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
-  .range{position:absolute;right:42px;bottom:60px;font-size:150px;font-weight:700;line-height:1;text-align:right}
+  ${coverCss()}
   </style></head><body><div class="page">
     <img class="logo" src="${logoDataUri()}" alt="wir festival">
     <div class="dots"></div>
@@ -169,18 +174,9 @@ function eventRow(ev) {
   </li>`;
 }
 
-// --- Listen-Slide: ein oder mehrere Tages-Abschnitte; Tag-Header alterniert (Figma B) ---
-function slideHtml(sections) {
-  const blocks = sections.map((s) => {
-    // Folge-Abschnitt eines Tages (isCont): kein Datums-Header, Liste laeuft einfach weiter.
-    const wd = `<span class="wd">${htmlEscape(s.weekday)}</span>`;
-    const bd = `<span class="bigdate">${htmlEscape(s.bigDate)}</span>`;
-    const head = s.isCont ? '' : `<div class="dayhead">${s.alt ? wd + bd : bd + wd}</div>`;
-    return `<section class="day${s.alt ? ' alt' : ''}">${head}<ul class="list">${s.rows.join('')}</ul></section>`;
-  }).join('');
-  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${FONT_CSS}
-  ${baseCss()}
-  .page{padding:40px}
+// Slide-CSS (Listen-Layout) — geteilt von Pipeline-Render UND Editor, damit die Optik identisch ist.
+function slideCss() {
+  return `.page{padding:40px}
   .day{margin-top:30px}
   .day:first-child{margin-top:4px}
   .day + .day{border-top:5px solid ${COLORS.text};padding-top:26px}
@@ -193,13 +189,27 @@ function slideHtml(sections) {
   ul.list{list-style:none;margin-top:24px}
   li{display:flex;gap:34px;padding:22px 0}
   li + li{border-top:7px dotted ${COLORS.text}}
-  .day:last-child .list li:last-child{padding-bottom:0} /* unterer Rand = oberer, spart Platz */
+  .day:last-child .list li:last-child{padding-bottom:0}
   .cl{flex:0 0 330px}
   .time{font-size:40px;font-weight:700;line-height:1.15}
   .loc{font-size:40px;font-style:italic;font-weight:400;line-height:1.2;margin-top:2px}
   .cr{flex:1;min-width:0}
   .cat{font-size:40px;font-weight:700;text-transform:uppercase;line-height:1.15}
-  .title{font-size:40px;font-weight:400;line-height:1.2;margin-top:2px}
+  .title{font-size:40px;font-weight:400;line-height:1.2;margin-top:2px}`;
+}
+
+// --- Listen-Slide: ein oder mehrere Tages-Abschnitte; Tag-Header alterniert (Figma B) ---
+function slideHtml(sections) {
+  const blocks = sections.map((s) => {
+    // Folge-Abschnitt eines Tages (isCont): kein Datums-Header, Liste laeuft einfach weiter.
+    const wd = `<span class="wd">${htmlEscape(s.weekday)}</span>`;
+    const bd = `<span class="bigdate">${htmlEscape(s.bigDate)}</span>`;
+    const head = s.isCont ? '' : `<div class="dayhead">${s.alt ? wd + bd : bd + wd}</div>`;
+    return `<section class="day${s.alt ? ' alt' : ''}">${head}<ul class="list">${s.rows.join('')}</ul></section>`;
+  }).join('');
+  return `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${FONT_CSS}
+  ${baseCss()}
+  ${slideCss()}
   </style></head><body><div class="page">${blocks}</div></body></html>`;
 }
 
@@ -281,6 +291,7 @@ async function writeIndex(slides, kw, weekStart, weekEnd, build) {
     <div class="sub">${range} · ${slides.length} Slides · automatisch generiert</div>
     <a class="csv" href="events-KW${kw}.csv" download>📄 CSV für Figma</a>
     <a class="csv" style="background:#5b3f7a" href="uebersicht.html">🌐 Website-Übersicht</a>
+    <a class="csv" style="background:#2a1c3d" href="editor.html">✏️ Slides bearbeiten</a>
   </header><div class="grid">${cards}</div></body></html>\n`;
   await fs.writeFile(path.join(OUT, 'index.html'), html, 'utf8');
 }
@@ -318,6 +329,31 @@ async function writeOverview(events, kw, weekStart, weekEnd) {
   <footer>Automatisch erzeugt aus dem Veranstaltungskalender · wir-halle.de</footer>
 </div></body></html>\n`;
   await fs.writeFile(path.join(OUT, 'uebersicht.html'), html, 'utf8');
+}
+
+// Editor-Daten fuer den clientseitigen HTML-Editor (editor.html rendert daraus).
+async function writeEditor(days, kw, weekStart, weekEnd) {
+  const data = {
+    kw,
+    range: `${dayDate(weekStart)} – ${dayDate(weekEnd)}`,
+    W, H,
+    colors: COLORS,
+    logo: logoDataUri(),
+    fontCss: FONT_CSS,
+    baseCss: baseCss(),
+    coverCss: coverCss(),
+    slideCss: slideCss(),
+    days: days.map((d) => ({
+      bigDate: dayDate(d.date),
+      weekday: format(d.date, 'EEEE', { locale: de }),
+      events: d.events.map((ev) => ({
+        time: startTime(ev), location: ev.location || '', category: ev.category || '', title: ev.title || '',
+      })),
+    })),
+  };
+  await fs.writeFile(path.join(OUT, 'editor-data.js'), `window.WIR = ${JSON.stringify(data)};\n`, 'utf8');
+  const tpl = await fs.readFile(path.join(ROOT, 'template/editor.html'), 'utf8');
+  await fs.writeFile(path.join(OUT, 'editor.html'), tpl, 'utf8');
 }
 
 async function main() {
@@ -382,7 +418,8 @@ async function main() {
   await writeCsv(week, kw);
   await writeIndex(slides, kw, weekStart, weekEnd, Date.now());
   await writeOverview(week, kw, weekStart, weekEnd);
-  console.log(`\nFertig. ${slides.length} Slides (JPG) + CSV + index.html + uebersicht.html`);
+  await writeEditor(days, kw, weekStart, weekEnd);
+  console.log(`\nFertig. ${slides.length} Slides (JPG) + CSV + index.html + uebersicht.html + editor.html`);
 }
 
 main().catch((err) => { console.error('FEHLER:', err); process.exit(1); });

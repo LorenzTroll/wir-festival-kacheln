@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>WIR-Festival — Slides bearbeiten</title>
+<style id="cd"></style>
+<style>
+  :root{--ui:#2a1c3d;--uibg:#f3f0f8;--accent:#ff5100}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--uibg);color:var(--ui)}
+  header{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid #e2dcec;padding:12px 20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  header h1{font-size:16px;margin:0 12px 0 0}
+  header .sub{color:#7a6b90;font-size:13px;margin-right:auto}
+  button.ui{border:0;border-radius:8px;padding:9px 14px;font-weight:600;font-size:14px;cursor:pointer}
+  .primary{background:var(--accent);color:#fff}.ghost{background:#efeaf6;color:var(--ui)}
+  .hint{max-width:460px;margin:16px auto 0;color:#6b5b80;font-size:13px;text-align:center;line-height:1.5}
+  #stage{display:flex;flex-direction:column;align-items:center;gap:26px;padding:24px 16px 80px}
+  .frame{transform-origin:top center;box-shadow:0 6px 30px rgba(0,0,0,.14);border-radius:4px;overflow:hidden}
+  /* Edit-Affordances (werden beim Export ausgeblendet) */
+  .page [contenteditable]{outline:0;cursor:text;border-radius:4px}
+  .page [contenteditable]:hover{box-shadow:0 0 0 3px rgba(255,255,255,.35)}
+  .page [contenteditable]:focus{box-shadow:0 0 0 3px var(--accent)}
+  li{position:relative}
+  .del,.handle,.addev{position:absolute;border:0;border-radius:6px;font-size:20px;line-height:1;cursor:pointer;opacity:0;transition:opacity .12s;z-index:5}
+  li:hover .del,li:hover .handle,section.day:hover .addev{opacity:1}
+  .handle{left:-38px;top:24px;width:30px;height:34px;background:#ffffffcc;color:#333;cursor:grab}
+  .del{right:-40px;top:24px;width:32px;height:34px;background:#ffffffcc;color:#c00}
+  .addev{right:0;top:-4px;background:var(--accent);color:#fff;font-size:13px;font-weight:700;padding:5px 10px;height:auto}
+  .sortable-ghost{opacity:.4}
+  .exporting .del,.exporting .handle,.exporting .addev{display:none!important}
+  .exporting [contenteditable]:hover,.exporting [contenteditable]:focus{box-shadow:none!important}
+</style>
+</head>
+<body>
+<header>
+  <h1>Slides bearbeiten</h1>
+  <span class="sub" id="sub"></span>
+  <button class="ui ghost" id="addDay">+ Tag</button>
+  <button class="ui ghost" id="reset">Zurücksetzen</button>
+  <button class="ui primary" id="export">Alle als JPG exportieren</button>
+</header>
+<p class="hint">Reinklicken und Text ändern · beim Überfahren einer Zeile erscheinen <b>✕</b> (löschen) und <b>⠿</b> (ziehen zum Umsortieren) · „+ Termin" pro Tag. Änderungen bleiben lokal in deinem Browser — das Veröffentlichte ändert sich nicht. Am Ende exportierst du die fertigen Bilder.</p>
+<div id="stage"></div>
+
+<script src="editor-data.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.js"></script>
+<script>
+const D = window.WIR;
+document.getElementById('cd').textContent = D.fontCss + D.baseCss + D.coverCss + D.slideCss;
+document.getElementById('sub').textContent = 'KW ' + D.kw + ' · ' + D.range;
+let days = JSON.parse(JSON.stringify(D.days));
+const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+// Skalierung der 1080er-Frames auf die Fensterbreite
+function scale(){ return Math.min(1, (Math.min(window.innerWidth-40, 520)) / D.W); }
+
+// --- Mess-Element fuer die Paginierung (unsichtbar, natuerliche Groesse) ---
+const meas = document.createElement('div');
+meas.className = 'page';
+meas.style.cssText = 'position:absolute;left:-99999px;top:0;visibility:hidden';
+document.body.appendChild(meas);
+function plainSection(sec){
+  const wd = '<span class="wd">'+esc(sec.weekday)+'</span>', bd = '<span class="bigdate">'+esc(sec.bigDate)+'</span>';
+  const head = sec.isCont ? '' : '<div class="dayhead">'+(sec.alt?wd+bd:bd+wd)+'</div>';
+  const lis = sec.events.map(e=>{
+    const cat = e.ev.category ? '<div class="cat">'+esc(e.ev.category)+'</div>' : '';
+    const loc = e.ev.location ? '<div class="loc">'+esc(e.ev.location)+'</div>' : '';
+    return '<li><div class="cl"><div class="time">'+esc(e.ev.time)+'</div>'+loc+'</div><div class="cr">'+cat+'<div class="title">'+esc(e.ev.title)+'</div></div></li>';
+  }).join('');
+  return '<section class="day'+(sec.alt?' alt':'')+'"><\/section>'.replace('<\/section>', (head+'<ul class="list">'+lis+'</ul>')+'</section>');
+}
+function overflow(sections){ meas.innerHTML = sections.map(plainSection).join(''); return meas.scrollHeight - meas.clientHeight; }
+
+// --- Paginierung: Portierung von packSlides (Server) ---
+function computePages(){
+  const blocks = days.map((d,i)=>({dayIdx:i,bigDate:d.bigDate,weekday:d.weekday,alt:i%2===1,
+    events:d.events.map((ev,j)=>({ev,dayIdx:i,evIdx:j}))}));
+  const pages=[]; let cur=[];
+  const mk=(d,isCont)=>({dayIdx:d.dayIdx,bigDate:d.bigDate,weekday:d.weekday,alt:d.alt,isCont,events:[]});
+  const fits=()=>overflow(cur)<=1;
+  for(const d of blocks){
+    let idx=0, isCont=false;
+    while(idx<d.events.length){
+      const sec=mk(d,isCont); cur.push(sec); let added=0;
+      while(idx<d.events.length){ sec.events.push(d.events[idx]); if(fits()){idx++;added++;} else {sec.events.pop();break;} }
+      if(added===0){ cur.pop();
+        if(cur.length>0){ pages.push(cur); cur=[]; }
+        else { sec.events.push(d.events[idx]); idx++; cur.push(sec); if(idx<d.events.length){pages.push(cur);cur=[];isCont=true;} }
+      } else if(idx<d.events.length){ pages.push(cur); cur=[]; isCont=true; }
+    }
+  }
+  if(cur.length>0) pages.push(cur);
+  return pages;
+}
+
+// --- Rendern (mit Edit-Controls) ---
+function frame(inner){ const f=document.createElement('div'); f.className='frame'; f.style.width=(D.W*scale())+'px'; f.style.height=(D.H*scale())+'px';
+  const p=document.createElement('div'); p.innerHTML=inner; const page=p.firstElementChild; page.style.transform='scale('+scale()+')'; page.style.transformOrigin='top left';
+  f.appendChild(page); return {f,page}; }
+
+function coverInner(){
+  return '<div class="page"><img class="logo" src="'+D.logo+'"><div class="dots"></div>'
+    + '<div class="hu"><span>Wochen-<br>übersicht</span></div>'
+    + '<div class="range" contenteditable>'+esc(D.range.split(' – ')[0])+'.<br>– '+esc(D.range.split(' – ')[1])+'</div></div>';
+}
+function editSection(sec){
+  const wd='<span class="wd" contenteditable>'+esc(sec.weekday)+'</span>', bd='<span class="bigdate" contenteditable>'+esc(sec.bigDate)+'</span>';
+  const addbtn = sec.isCont ? '' : '<button class="addev" data-add="'+sec.dayIdx+'">+ Termin</button>';
+  const head = sec.isCont ? '' : '<div class="dayhead" style="position:relative">'+(sec.alt?wd+bd:bd+wd)+addbtn+'</div>';
+  const lis = sec.events.map(e=>
+    '<li data-d="'+e.dayIdx+'" data-e="'+e.evIdx+'">'
+    +'<span class="handle" title="Ziehen">⠿</span><button class="del" title="Löschen">✕</button>'
+    +'<div class="cl"><div class="time" data-f="time" contenteditable>'+esc(e.ev.time)+'</div>'
+    +'<div class="loc" data-f="location" contenteditable>'+esc(e.ev.location)+'</div></div>'
+    +'<div class="cr"><div class="cat" data-f="category" contenteditable>'+esc(e.ev.category)+'</div>'
+    +'<div class="title" data-f="title" contenteditable>'+esc(e.ev.title)+'</div></div></li>'
+  ).join('');
+  return '<section class="day'+(sec.alt?' alt':'')+'">'+head+'<ul class="list" data-day="'+sec.dayIdx+'">'+lis+'</ul></section>';
+}
+
+let pages=[];
+function render(){
+  const stage=document.getElementById('stage'); stage.innerHTML='';
+  pages=computePages();
+  // Cover
+  const cov=frame(coverInner()); stage.appendChild(cov.f);
+  // Listen-Slides
+  pages.forEach(secs=>{
+    const {f,page}=frame('<div class="page">'+secs.map(editSection).join('')+'</div>');
+    stage.appendChild(f);
+    // Drag & Drop je Tagesliste
+    page.querySelectorAll('ul.list').forEach(ul=>{
+      new Sortable(ul,{handle:'.handle',animation:150,onEnd:evt=>{
+        const day=+ul.dataset.day; const arr=days[day].events;
+        arr.splice(evt.newIndex,0,arr.splice(evt.oldIndex,1)[0]); render();
+      }});
+    });
+  });
+  bind();
+}
+function bind(){
+  document.querySelectorAll('[data-f]').forEach(el=>{
+    el.addEventListener('blur',()=>{ const li=el.closest('li'); const d=+li.dataset.d,e=+li.dataset.e;
+      days[d].events[e][el.dataset.f]=el.textContent.trim(); render(); });
+  });
+  document.querySelectorAll('.del').forEach(b=>b.addEventListener('click',()=>{
+    const li=b.closest('li'); const d=+li.dataset.d,e=+li.dataset.e;
+    days[d].events.splice(e,1); if(days[d].events.length===0 && confirm('Tag „'+days[d].weekday+'" ist leer — Tag entfernen?')) days.splice(d,1);
+    render(); }));
+  document.querySelectorAll('.addev').forEach(b=>b.addEventListener('click',()=>{
+    const d=+b.dataset.add; days[d].events.push({time:'00:00',location:'Ort',category:'',title:'Neue Veranstaltung'}); render(); }));
+}
+document.getElementById('addDay').addEventListener('click',()=>{
+  days.push({bigDate:'01.01.',weekday:'Neuer Tag',events:[{time:'00:00',location:'Ort',category:'',title:'Neue Veranstaltung'}]}); render(); });
+document.getElementById('reset').addEventListener('click',()=>{ if(confirm('Alle Änderungen verwerfen?')){ days=JSON.parse(JSON.stringify(D.days)); render(); }});
+window.addEventListener('resize',()=>render());
+
+// --- Export: jede Seite als JPG ---
+document.getElementById('export').addEventListener('click',async ()=>{
+  const btn=document.getElementById('export'); btn.disabled=true; btn.textContent='Exportiere…';
+  document.body.classList.add('exporting');
+  const frames=[...document.querySelectorAll('.frame .page')];
+  for(let i=0;i<frames.length;i++){
+    const node=frames[i]; const prev=node.style.transform; node.style.transform='none';
+    try{
+      const url=await htmlToImage.toJpeg(node,{width:D.W,height:D.H,quality:0.95,pixelRatio:1,backgroundColor:D.colors.bg,fontEmbedCSS:D.fontCss});
+      const a=document.createElement('a'); a.href=url; a.download='WIR-KW'+D.kw+'-slide-'+String(i+1).padStart(2,'0')+'.jpg'; a.click();
+      await new Promise(r=>setTimeout(r,250));
+    }catch(err){ console.error(err); alert('Export der Slide '+(i+1)+' fehlgeschlagen: '+err.message); }
+    node.style.transform=prev;
+  }
+  document.body.classList.remove('exporting'); btn.disabled=false; btn.textContent='Alle als JPG exportieren';
+});
+
+render();
+</script>
+</body>
+</html>
